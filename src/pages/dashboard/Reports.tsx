@@ -1,373 +1,206 @@
-import React, { useEffect, useState } from 'react';
-import { apiService } from '@/services/api';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Download, Search, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { apiService } from '@/services/api';
+import { useToast } from '@/hooks/use-toast';
+import { Badge } from '@/components/ui/badge';
 
-const PAGE_SIZE = 10;
+// CORREÇÃO: A interface foi ajustada para corresponder à resposta da API `getDeliveries`.
+interface DeliveryReportItem {
+  id: string;
+  nf_number: string;
+  client_name: string;
+  created_at: string;
+  status: string;
+  updated_at?: string; // Mantido como opcional, pois a ordenação o utiliza
+  driver_name?: string;
+}
 
-const Reports: React.FC = () => {
-  // Estados para cada relatório
-  const [tab, setTab] = useState('entregas');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const DeliveriesReportTab = () => {
+  const [allDeliveries, setAllDeliveries] = useState<DeliveryReportItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+  const { toast } = useToast();
 
-  // Entregas
-  const [entregas, setEntregas] = useState<any[]>([]);
-  const [entregasFiltro, setEntregasFiltro] = useState('');
-  const [entregasPage, setEntregasPage] = useState(1);
-
-  // Ocorrências
-  const [ocorrencias, setOcorrencias] = useState<any[]>([]);
-  const [ocorrenciasFiltro, setOcorrenciasFiltro] = useState('');
-  const [ocorrenciasPage, setOcorrenciasPage] = useState(1);
-
-  // Comprovantes
-  const [comprovantes, setComprovantes] = useState<any[]>([]);
-  const [comprovantesFiltro, setComprovantesFiltro] = useState('');
-  const [comprovantesPage, setComprovantesPage] = useState(1);
-
-  // Desempenho
-  const [desempenho, setDesempenho] = useState<any[]>([]);
-  const [desempenhoFiltro, setDesempenhoFiltro] = useState('');
-  const [desempenhoPage, setDesempenhoPage] = useState(1);
-
-  // Cliente
-  const [clientes, setClientes] = useState<any[]>([]);
-  const [clientesFiltro, setClientesFiltro] = useState('');
-  const [clientesPage, setClientesPage] = useState(1);
-
-  // Status Diário
-  const [statusDiario, setStatusDiario] = useState<any[]>([]);
-
-  // Função para exportar dados para CSV
-  const exportToCSV = (data: any[], filename: string) => {
-    const csv = [Object.keys(data[0] || {}).join(','), ...data.map(row => Object.values(row).join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    window.URL.revokeObjectURL(url);
-  };
-
-  // Carregar dados ao trocar de aba
   useEffect(() => {
-    setError(null);
-    setLoading(true);
-    const fetchData = async () => {
+    const fetchDeliveries = async () => {
+      setLoading(true);
       try {
-        if (tab === 'entregas') {
-          const res = await apiService.getDeliveryReports({ search: entregasFiltro });
-          setEntregas(res.data || []);
-        } else if (tab === 'ocorrencias') {
-          const res = await apiService.getOccurrencesReports({ search: ocorrenciasFiltro });
-          setOcorrencias(res.data || []);
-        } else if (tab === 'comprovantes') {
-          const res = await apiService.getReceiptsReports({ search: comprovantesFiltro });
-          setComprovantes(res.data || []);
-        } else if (tab === 'desempenho') {
-          const res = await apiService.getDriverPerformanceReports({ search: desempenhoFiltro });
-          setDesempenho(res.data || []);
-        } else if (tab === 'cliente') {
-          const res = await apiService.getClientVolumeReports({ search: clientesFiltro });
-          setClientes(res.data || []);
-        } else if (tab === 'status') {
-          const res = await apiService.getDailyStatus();
-          setStatusDiario(res.data ? [res.data] : []);
+        const response = await apiService.getDeliveries({});
+        if (response.success && Array.isArray(response.data)) {
+          // A ordenação agora usa 'updated_at' se existir, ou 'created_at' como fallback.
+          const sortedData = (response.data as DeliveryReportItem[]).sort((a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime());
+          setAllDeliveries(sortedData);
+        } else {
+          toast({
+            title: 'Erro ao carregar entregas',
+            description: response.error || 'Não foi possível buscar os dados.',
+            variant: 'destructive',
+          });
         }
-      } catch (e: any) {
-        setError('Erro ao carregar dados');
+      } catch (error: any) {
+        toast({
+          title: 'Erro de Conexão',
+          description: error.message,
+          variant: 'destructive',
+        });
       } finally {
         setLoading(false);
       }
     };
-    fetchData();
-    // eslint-disable-next-line
-  }, [tab, entregasFiltro, ocorrenciasFiltro, comprovantesFiltro, desempenhoFiltro, clientesFiltro]);
+    fetchDeliveries();
+  }, [toast]);
 
-  // Paginação
-  const paginate = (data: any[], page: number) => data.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const totalPages = (data: any[]) => Math.ceil(data.length / PAGE_SIZE);
+  const filteredDeliveries = useMemo(() => {
+    if (!searchTerm) return allDeliveries;
+    return allDeliveries.filter(delivery =>
+      (delivery.nf_number?.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (delivery.client_name?.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+  }, [allDeliveries, searchTerm]);
+
+  const totalPages = Math.ceil(filteredDeliveries.length / itemsPerPage);
+  const paginatedDeliveries = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredDeliveries.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredDeliveries, currentPage]);
+
+  const exportToCSV = () => {
+    if (filteredDeliveries.length === 0) {
+      toast({ title: "Nenhum dado para exportar." });
+      return;
+    }
+    const headers = ["NF", "Cliente", "Motorista", "Data Atualização", "Status"];
+    const csvRows = [headers.join(',')];
+    filteredDeliveries.forEach(d => {
+      const row = [
+        `"${d.nf_number || ''}"`,
+        `"${(d.client_name || '').replace(/"/g, '""')}"`,
+        `"${d.driver_name || 'N/A'}"`,
+        `"${new Date(d.updated_at).toLocaleString('pt-BR')}"`,
+        `"${d.status}"`
+      ];
+      csvRows.push(row.join(','));
+    });
+
+    const csvString = csvRows.join('\n');
+    const blob = new Blob([`\uFEFF${csvString}`], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `relatorio_entregas_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'DELIVERED': return <Badge className="bg-green-500 hover:bg-green-600 text-white">Realizada</Badge>;
+      case 'IN_TRANSIT': return <Badge className="bg-yellow-500 hover:bg-yellow-600 text-white">Em Trânsito</Badge>;
+      case 'PENDING': return <Badge variant="secondary">Pendente</Badge>;
+      case 'REFUSED': case 'CANCELED': return <Badge variant="destructive">Problema</Badge>;
+      default: return <Badge>{status}</Badge>;
+    }
+  };
 
   return (
-    <>
-      <div className="container mx-auto px-4 md:px-6 py-6">
-        <h1 className="text-2xl font-bold mb-4">Relatórios</h1>
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList>
-            <TabsTrigger value="entregas">Entregas</TabsTrigger>
-            <TabsTrigger value="ocorrencias">Ocorrências</TabsTrigger>
-            <TabsTrigger value="comprovantes">Comprovantes</TabsTrigger>
-            <TabsTrigger value="desempenho">Desempenho</TabsTrigger>
-            <TabsTrigger value="cliente">Cliente</TabsTrigger>
-            <TabsTrigger value="status">Status Diário</TabsTrigger>
-          </TabsList>
-
-          {/* Entregas */}
-          <TabsContent value="entregas">
-            <Card>
-              <CardHeader>
-                <CardTitle>Entregas Realizadas</CardTitle>
-                <form className="flex flex-col gap-2 w-full max-w-md md:flex-row md:gap-2 mt-2">
-                  <Input placeholder="Buscar por NF, Cliente..." value={entregasFiltro} onChange={e => setEntregasFiltro(e.target.value)} className="w-full min-h-[44px] text-base" />
-                  <Button type="button" onClick={() => exportToCSV(entregas, 'entregas.csv')} className="w-full min-h-[44px] text-base md:w-auto">Exportar CSV</Button>
-                </form>
-              </CardHeader>
-              <CardContent>
-                {loading ? <p>Carregando...</p> : error ? <p className="text-destructive">{error}</p> : (
-                  <div className="w-full overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>NF</TableHead>
-                          <TableHead>Cliente</TableHead>
-                          <TableHead>Data</TableHead>
-                          <TableHead>Status</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {paginate(entregas, entregasPage).map((r: any) => (
-                          <TableRow key={r.id}>
-                            <TableCell>{r.nfNumber}</TableCell>
-                            <TableCell>{r.client}</TableCell>
-                            <TableCell>{new Date(r.date).toLocaleDateString('pt-BR')}</TableCell>
-                            <TableCell>{r.status}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-                <div className="flex justify-end gap-2 mt-2">
-                  <Button disabled={entregasPage === 1} onClick={() => setEntregasPage(p => p - 1)}>Anterior</Button>
-                  <span>Página {entregasPage} de {totalPages(entregas)}</span>
-                  <Button disabled={entregasPage === totalPages(entregas)} onClick={() => setEntregasPage(p => p + 1)}>Próxima</Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Ocorrências */}
-          <TabsContent value="ocorrencias">
-            <Card>
-              <CardHeader>
-                <CardTitle>Ocorrências</CardTitle>
-                <form className="flex flex-col gap-2 w-full max-w-md md:flex-row md:gap-2 mt-2">
-                  <Input placeholder="Buscar por NF, Cliente..." value={ocorrenciasFiltro} onChange={e => setOcorrenciasFiltro(e.target.value)} className="w-full min-h-[44px] text-base" />
-                  <Button type="button" onClick={() => exportToCSV(ocorrencias, 'ocorrencias.csv')} className="w-full min-h-[44px] text-base md:w-auto">Exportar CSV</Button>
-                </form>
-              </CardHeader>
-              <CardContent>
-                {loading ? <p>Carregando...</p> : error ? <p className="text-destructive">{error}</p> : (
-                  <div className="w-full overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>NF</TableHead>
-                          <TableHead>Cliente</TableHead>
-                          <TableHead>Data</TableHead>
-                          <TableHead>Tipo</TableHead>
-                          <TableHead>Observação</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {paginate(ocorrencias, ocorrenciasPage).map((r: any) => (
-                          <TableRow key={r.id}>
-                            <TableCell>{r.nfNumber}</TableCell>
-                            <TableCell>{r.client}</TableCell>
-                            <TableCell>{new Date(r.date).toLocaleDateString('pt-BR')}</TableCell>
-                            <TableCell>{r.type}</TableCell>
-                            <TableCell>{r.note}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-                <div className="flex justify-end gap-2 mt-2">
-                  <Button disabled={ocorrenciasPage === 1} onClick={() => setOcorrenciasPage(p => p - 1)}>Anterior</Button>
-                  <span>Página {ocorrenciasPage} de {totalPages(ocorrencias)}</span>
-                  <Button disabled={ocorrenciasPage === totalPages(ocorrencias)} onClick={() => setOcorrenciasPage(p => p + 1)}>Próxima</Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Comprovantes */}
-          <TabsContent value="comprovantes">
-            <Card>
-              <CardHeader>
-                <CardTitle>Comprovantes</CardTitle>
-                <form className="flex flex-col gap-2 w-full max-w-md md:flex-row md:gap-2 mt-2">
-                  <Input placeholder="Buscar por NF, Cliente..." value={comprovantesFiltro} onChange={e => setComprovantesFiltro(e.target.value)} className="w-full min-h-[44px] text-base" />
-                  <Button type="button" onClick={() => exportToCSV(comprovantes, 'comprovantes.csv')} className="w-full min-h-[44px] text-base md:w-auto">Exportar CSV</Button>
-                </form>
-              </CardHeader>
-              <CardContent>
-                {loading ? <p>Carregando...</p> : error ? <p className="text-destructive">{error}</p> : (
-                  <div className="w-full overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>NF</TableHead>
-                          <TableHead>Cliente</TableHead>
-                          <TableHead>Data</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Comprovante</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {paginate(comprovantes, comprovantesPage).map((r: any) => (
-                          <TableRow key={r.id}>
-                            <TableCell>{r.nfNumber}</TableCell>
-                            <TableCell>{r.client}</TableCell>
-                            <TableCell>{new Date(r.date).toLocaleDateString('pt-BR')}</TableCell>
-                            <TableCell>{r.status}</TableCell>
-                            <TableCell><a href={r.receiptUrl} target="_blank" rel="noopener noreferrer">Ver</a></TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-                <div className="flex justify-end gap-2 mt-2">
-                  <Button disabled={comprovantesPage === 1} onClick={() => setComprovantesPage(p => p - 1)}>Anterior</Button>
-                  <span>Página {comprovantesPage} de {totalPages(comprovantes)}</span>
-                  <Button disabled={comprovantesPage === totalPages(comprovantes)} onClick={() => setComprovantesPage(p => p + 1)}>Próxima</Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Desempenho */}
-          <TabsContent value="desempenho">
-            <Card>
-              <CardHeader>
-                <CardTitle>Desempenho por Motorista</CardTitle>
-                <form className="flex flex-col gap-2 w-full max-w-md md:flex-row md:gap-2 mt-2">
-                  <Input placeholder="Buscar por Motorista..." value={desempenhoFiltro} onChange={e => setDesempenhoFiltro(e.target.value)} className="w-full min-h-[44px] text-base" />
-                  <Button type="button" onClick={() => exportToCSV(desempenho, 'desempenho.csv')} className="w-full min-h-[44px] text-base md:w-auto">Exportar CSV</Button>
-                </form>
-              </CardHeader>
-              <CardContent>
-                {loading ? <p>Carregando...</p> : error ? <p className="text-destructive">{error}</p> : (
-                  <div className="w-full overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Motorista</TableHead>
-                          <TableHead>Entregas</TableHead>
-                          <TableHead>Eficiência</TableHead>
-                          <TableHead>Ocorrências</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {paginate(desempenho, desempenhoPage).map((r: any) => (
-                          <TableRow key={r.id}>
-                            <TableCell>{r.driver}</TableCell>
-                            <TableCell>{r.totalDeliveries}</TableCell>
-                            <TableCell>{r.efficiency}%</TableCell>
-                            <TableCell>{r.occurrences}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-                <div className="flex justify-end gap-2 mt-2">
-                  <Button disabled={desempenhoPage === 1} onClick={() => setDesempenhoPage(p => p - 1)}>Anterior</Button>
-                  <span>Página {desempenhoPage} de {totalPages(desempenho)}</span>
-                  <Button disabled={desempenhoPage === totalPages(desempenho)} onClick={() => setDesempenhoPage(p => p + 1)}>Próxima</Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Cliente */}
-          <TabsContent value="cliente">
-            <Card>
-              <CardHeader>
-                <CardTitle>Relatório por Cliente</CardTitle>
-                <form className="flex flex-col gap-2 w-full max-w-md md:flex-row md:gap-2 mt-2">
-                  <Input placeholder="Buscar por Cliente..." value={clientesFiltro} onChange={e => setClientesFiltro(e.target.value)} className="w-full min-h-[44px] text-base" />
-                  <Button type="button" onClick={() => exportToCSV(clientes, 'clientes.csv')} className="w-full min-h-[44px] text-base md:w-auto">Exportar CSV</Button>
-                </form>
-              </CardHeader>
-              <CardContent>
-                {loading ? <p>Carregando...</p> : error ? <p className="text-destructive">{error}</p> : (
-                  <div className="w-full overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Cliente</TableHead>
-                          <TableHead>Volume</TableHead>
-                          <TableHead>Valor</TableHead>
-                          <TableHead>Mês/Ano</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {paginate(clientes, clientesPage).map((r: any) => (
-                          <TableRow key={r.id}>
-                            <TableCell>{r.client}</TableCell>
-                            <TableCell>{r.volume}</TableCell>
-                            <TableCell>R$ {r.value ? r.value.toFixed(2) : '0.00'}</TableCell>
-                            <TableCell>{r.month}/{r.year}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-                <div className="flex justify-end gap-2 mt-2">
-                  <Button disabled={clientesPage === 1} onClick={() => setClientesPage(p => p - 1)}>Anterior</Button>
-                  <span>Página {clientesPage} de {totalPages(clientes)}</span>
-                  <Button disabled={clientesPage === totalPages(clientes)} onClick={() => setClientesPage(p => p + 1)}>Próxima</Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Status Diário */}
-          <TabsContent value="status">
-            <Card>
-              <CardHeader>
-                <CardTitle>Status Diário</CardTitle>
-                <Button type="button" onClick={() => exportToCSV(statusDiario, 'status_diario.csv')} className="w-full min-h-[44px] text-base md:w-auto">Exportar CSV</Button>
-              </CardHeader>
-              <CardContent>
-                {loading ? <p>Carregando...</p> : error ? <p className="text-destructive">{error}</p> : (
-                  <div className="w-full overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          {statusDiario[0] && Object.keys(statusDiario[0]).map((key) => (
-                            <TableHead key={key}>{key}</TableHead>
-                          ))}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {statusDiario.map((r: any, idx: number) => (
-                          <TableRow key={idx}>
-                            {Object.values(r).map((val, i) => (
-                              <TableCell key={i}>{val}</TableCell>
-                            ))}
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
-      </div>
-    </>
+    <Card>
+      <CardHeader>
+        <CardTitle>Entregas Realizadas</CardTitle>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-4">
+          <div className="relative w-full sm:w-auto sm:flex-grow sm:max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por NF, Cliente..."
+              className="pl-8 w-full"
+              value={searchTerm}
+              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+            />
+          </div>
+          <Button variant="outline" onClick={exportToCSV} disabled={filteredDeliveries.length === 0 || loading}>
+            <Download className="mr-2 h-4 w-4" />
+            Exportar CSV
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>NF</TableHead>
+                <TableHead>Cliente</TableHead>
+                <TableHead>Data</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow><TableCell colSpan={4} className="h-24 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>
+              ) : paginatedDeliveries.length > 0 ? (
+                paginatedDeliveries.map((d) => (
+                  <TableRow key={d.id}>
+                    <TableCell className="font-medium">{d.nf_number || 'N/A'}</TableCell>
+                    <TableCell>{d.client_name || 'N/A'}</TableCell>
+                    <TableCell>{new Date(d.updated_at || d.created_at).toLocaleDateString('pt-BR')}</TableCell>
+                    <TableCell>{getStatusBadge(d.status)}</TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow><TableCell colSpan={4} className="h-24 text-center">Nenhum resultado encontrado.</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+        <div className="flex items-center justify-end space-x-2 py-4">
+          <span className="text-sm text-muted-foreground">
+            Página {currentPage} de {totalPages > 0 ? totalPages : 1}
+          </span>
+          <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => p - 1)} disabled={currentPage === 1}>
+            <ChevronLeft className="h-4 w-4" /> Anterior
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => p + 1)} disabled={currentPage >= totalPages}>
+            Próxima <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 };
 
-export default Reports; 
+const PlaceholderTab = ({ title }: { title: string }) => (
+  <Card>
+    <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
+    <CardContent><p>Este relatório está em desenvolvimento.</p></CardContent>
+  </Card>
+);
+
+const Reports = () => {
+  return (
+    <main className="container mx-auto px-4 py-6 space-y-6">
+      <h1 className="text-3xl font-bold tracking-tight">Relatórios</h1>
+      <Tabs defaultValue="deliveries" className="w-full">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-5">
+          <TabsTrigger value="deliveries">Entregas</TabsTrigger>
+          <TabsTrigger value="occurrences">Ocorrências</TabsTrigger>
+          <TabsTrigger value="receipts">Comprovantes</TabsTrigger>
+          <TabsTrigger value="performance">Desempenho</TabsTrigger>
+          <TabsTrigger value="client">Cliente</TabsTrigger>
+        </TabsList>
+        <TabsContent value="deliveries" className="mt-4"><DeliveriesReportTab /></TabsContent>
+        <TabsContent value="occurrences" className="mt-4"><PlaceholderTab title="Relatório de Ocorrências" /></TabsContent>
+        <TabsContent value="receipts" className="mt-4"><PlaceholderTab title="Relatório de Comprovantes" /></TabsContent>
+        <TabsContent value="performance" className="mt-4"><PlaceholderTab title="Relatório de Desempenho" /></TabsContent>
+        <TabsContent value="client" className="mt-4"><PlaceholderTab title="Relatório por Cliente" /></TabsContent>
+      </Tabs>
+    </main>
+  );
+};
+
+export default Reports;

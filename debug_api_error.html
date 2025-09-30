@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug API Error - ID Transportes</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .error { background-color: #fee; border-color: #fcc; }
+        .success { background-color: #efe; border-color: #cfc; }
+        .warning { background-color: #ffc; border-color: #ffb; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+        .log {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Debug API Error - ID Transportes</h1>
+        
+        <div class="section">
+            <h2>1. Verificação do LocalStorage</h2>
+            <button onclick="checkLocalStorage()">Verificar Tokens</button>
+            <div id="localStorage-result"></div>
+        </div>
+
+        <div class="section">
+            <h2>2. Teste de Conectividade dos Serviços</h2>
+            <button onclick="testServices()">Testar Todos os Serviços</button>
+            <div id="services-result"></div>
+        </div>
+
+        <div class="section">
+            <h2>3. Teste da API getCompanies</h2>
+            <button onclick="testGetCompanies()">Testar getCompanies</button>
+            <div id="companies-result"></div>
+        </div>
+
+        <div class="section">
+            <h2>4. Logs de Debug</h2>
+            <button onclick="clearLogs()">Limpar Logs</button>
+            <div id="debug-logs" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        // Função para adicionar logs
+        function addLog(message, type = 'info') {
+            const logs = document.getElementById('debug-logs');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<strong>[${timestamp}]</strong> ${message}`;
+            logEntry.style.color = type === 'error' ? 'red' : type === 'success' ? 'green' : 'black';
+            logs.appendChild(logEntry);
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        function clearLogs() {
+            document.getElementById('debug-logs').innerHTML = '';
+        }
+
+        // 1. Verificar LocalStorage
+        function checkLocalStorage() {
+            addLog('=== VERIFICAÇÃO DO LOCALSTORAGE ===');
+            const result = document.getElementById('localStorage-result');
+            
+            const tokens = {
+                'id_transporte_token': localStorage.getItem('id_transporte_token'),
+                'temp_token': localStorage.getItem('temp_token'),
+                'id_transporte_user': localStorage.getItem('id_transporte_user'),
+                'temp_user': localStorage.getItem('temp_user'),
+                'id_transporte_company': localStorage.getItem('id_transporte_company')
+            };
+
+            let html = '<h3>Tokens no LocalStorage:</h3>';
+            let hasValidToken = false;
+
+            for (const [key, value] of Object.entries(tokens)) {
+                if (value) {
+                    html += `<p><strong>${key}:</strong> ${value.substring(0, 50)}...</p>`;
+                    addLog(`${key}: Presente (${value.length} chars)`);
+                    if (key.includes('token')) hasValidToken = true;
+                } else {
+                    html += `<p><strong>${key}:</strong> <span style="color: red;">Ausente</span></p>`;
+                    addLog(`${key}: Ausente`, 'error');
+                }
+            }
+
+            result.innerHTML = html;
+            result.className = hasValidToken ? 'section success' : 'section error';
+            
+            if (!hasValidToken) {
+                addLog('❌ PROBLEMA: Nenhum token encontrado no localStorage', 'error');
+                addLog('💡 SOLUÇÃO: Faça login novamente para obter um token válido');
+            } else {
+                addLog('✅ Token encontrado no localStorage', 'success');
+            }
+        }
+
+        // 2. Testar conectividade dos serviços
+        async function testServices() {
+            addLog('=== TESTE DE CONECTIVIDADE DOS SERVIÇOS ===');
+            const result = document.getElementById('services-result');
+            const services = {
+                'Auth Service': 'http://localhost:3000',
+                'Auth Users': 'http://localhost:3001',
+                'Drivers': 'http://localhost:3002',
+                'Deliveries': 'http://localhost:3003',
+                'Receipts': 'http://localhost:3004',
+                'Tracking': 'http://localhost:3005',
+                'Reports': 'http://localhost:3006',
+                'Companies': 'http://localhost:3007'
+            };
+
+            let html = '<h3>Status dos Serviços:</h3>';
+            
+            for (const [name, url] of Object.entries(services)) {
+                try {
+                    addLog(`Testando ${name} (${url})...`);
+                    const response = await fetch(url, { method: 'GET' });
+                    const status = response.status;
+                    
+                    if (status === 404) {
+                        html += `<p>🟡 <strong>${name}</strong>: Serviço rodando (404 esperado)</p>`;
+                        addLog(`${name}: ✅ Serviço rodando (status ${status})`, 'success');
+                    } else {
+                        html += `<p>🟢 <strong>${name}</strong>: Serviço rodando (status ${status})</p>`;
+                        addLog(`${name}: ✅ Serviço rodando (status ${status})`, 'success');
+                    }
+                } catch (error) {
+                    html += `<p>🔴 <strong>${name}</strong>: Serviço indisponível (${error.message})</p>`;
+                    addLog(`${name}: ❌ Serviço indisponível - ${error.message}`, 'error');
+                }
+            }
+
+            result.innerHTML = html;
+            result.className = 'section';
+        }
+
+        // 3. Testar API getCompanies
+        async function testGetCompanies() {
+            addLog('=== TESTE DA API GETCOMPANIES ===');
+            const result = document.getElementById('companies-result');
+            
+            // Verificar se há token
+            const token = localStorage.getItem('id_transporte_token') || localStorage.getItem('temp_token');
+            
+            if (!token) {
+                result.innerHTML = '<p class="error">❌ Erro: Nenhum token encontrado. Faça login primeiro.</p>';
+                result.className = 'section error';
+                addLog('❌ Teste cancelado: Nenhum token disponível', 'error');
+                return;
+            }
+
+            try {
+                addLog('Fazendo requisição para /api/auth/companies...');
+                addLog(`Token usado: ${token.substring(0, 20)}...`);
+                
+                const response = await fetch('http://localhost:3000/api/auth/companies', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                addLog(`Status da resposta: ${response.status} ${response.statusText}`);
+                
+                const responseText = await response.text();
+                addLog(`Resposta recebida: ${responseText}`);
+
+                if (response.ok) {
+                    const data = JSON.parse(responseText);
+                    result.innerHTML = `
+                        <h3>✅ Sucesso!</h3>
+                        <p><strong>Status:</strong> ${response.status}</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                    result.className = 'section success';
+                    addLog('✅ API getCompanies funcionando corretamente', 'success');
+                } else {
+                    result.innerHTML = `
+                        <h3>❌ Erro na API</h3>
+                        <p><strong>Status:</strong> ${response.status}</p>
+                        <p><strong>Resposta:</strong></p>
+                        <pre>${responseText}</pre>
+                    `;
+                    result.className = 'section error';
+                    addLog(`❌ Erro na API: ${response.status} - ${responseText}`, 'error');
+                }
+            } catch (error) {
+                result.innerHTML = `
+                    <h3>❌ Erro de Conexão</h3>
+                    <p><strong>Erro:</strong> ${error.message}</p>
+                `;
+                result.className = 'section error';
+                addLog(`❌ Erro de conexão: ${error.message}`, 'error');
+            }
+        }
+
+        // Executar verificação inicial
+        window.onload = function() {
+            addLog('🚀 Debug API Error iniciado');
+            addLog('Clique nos botões acima para executar os testes');
+        };
+    </script>
+</body>
+</html>

@@ -11,10 +11,12 @@ import {
   Users, 
   MapPin,
   BarChart3,
-  FileText
+  FileText,
+  Search // Adicionado para o novo botão
 } from 'lucide-react';
 import { apiService } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
+import { DeliveryUpload } from '@/components/delivery/DeliveryUpload';
 
 export const AdminDashboard = () => {
   const [stats, setStats] = useState({
@@ -25,6 +27,7 @@ export const AdminDashboard = () => {
     ocorrencias: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [showDeliveryUpload, setShowDeliveryUpload] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -34,24 +37,35 @@ export const AdminDashboard = () => {
 
   const loadDashboardData = async () => {
     try {
-      const response = await apiService.getDailyStatus();
+      console.log('[AdminDashboard] 1. Iniciando busca de dados do dashboard...');
+      // CORREÇÃO: Usa o endpoint correto para buscar os KPIs.
+      const response = await apiService.getDashboardKPIs();
+      console.log('[AdminDashboard] 2. Resposta da API recebida:', response);
+
       if (response.success && response.data) {
-        const data = response.data as {
-          totalEntregas: number;
-          entregasRealizadas: number;
-          entregasPendentes: number;
-          motoristasAtivos: number;
-          ocorrencias: number;
+        console.log('[AdminDashboard] 3. Resposta com sucesso. Dados brutos:', response.data);
+        const kpis: any = response.data;
+        const newStats = {
+          totalEntregas: kpis.today_deliveries?.total ?? 0,
+          entregasRealizadas: kpis.today_deliveries?.completed ?? 0,
+          entregasPendentes: kpis.today_deliveries?.pending ?? 0,
+          ocorrencias: kpis.pending_occurrences ?? 0,
+          motoristasAtivos: kpis.active_drivers ?? 0, // Adicionado para consistência
         };
-        setStats(data);
+        console.log('[AdminDashboard] 4. Novos stats calculados:', newStats);
+        setStats(newStats);
+      } else {
+        console.warn('[AdminDashboard] A resposta da API não foi bem-sucedida ou não continha dados.', response);
       }
     } catch (error) {
+      console.error('[AdminDashboard] 5. Ocorreu um erro na busca de dados:', error);
       toast({
         title: "Erro ao carregar dados",
         description: "Não foi possível carregar os dados do dashboard",
         variant: "destructive",
       });
     } finally {
+      console.log('[AdminDashboard] 6. Finalizando carregamento.');
       setLoading(false);
     }
   };
@@ -65,6 +79,7 @@ export const AdminDashboard = () => {
   }
 
   return (
+    // 1. Layout restaurado: O container principal foi adicionado de volta.
     <div className="container mx-auto px-4 md:px-6 py-6 space-y-6">
       {/* Page Header */}
       <div className="flex items-center justify-between">
@@ -137,7 +152,11 @@ export const AdminDashboard = () => {
                 <div className="text-xs text-muted-foreground">Adicionar novos veículos</div>
               </div>
             </Button>
-            <Button variant="outline" className="justify-start h-12" onClick={() => navigate('/dashboard/entregas')}>
+            <Button 
+              variant="outline" 
+              className="justify-start h-12" 
+              onClick={() => setShowDeliveryUpload(true)}
+            >
               <Package className="mr-3 h-4 w-4" />
               <div className="text-left">
                 <div className="font-medium">Nova Entrega</div>
@@ -149,6 +168,18 @@ export const AdminDashboard = () => {
               <div className="text-left">
                 <div className="font-medium">Rastreamento</div>
                 <div className="text-xs text-muted-foreground">Ver localização dos motoristas</div>
+              </div>
+            </Button>
+            {/* Botão adicionado para buscar canhotos */}
+            <Button 
+              variant="outline" 
+              className="justify-start h-12" 
+              onClick={() => navigate('/dashboard/receipts-report')}
+            >
+              <Search className="mr-3 h-4 w-4" />
+              <div className="text-left">
+                <div className="font-medium">Buscar Canhotos</div>
+                <div className="text-xs text-muted-foreground">Consultar comprovantes de entrega</div>
               </div>
             </Button>
           </CardContent>
@@ -233,6 +264,22 @@ export const AdminDashboard = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* 2. Funcionalidade corrigida: Modal de Cadastro de Entrega com seleção de motorista habilitada. */}
+      <DeliveryUpload
+        open={showDeliveryUpload}
+        onOpenChange={setShowDeliveryUpload}
+        allowDriverSelection={true} // Força a exibição da lista de motoristas.
+        onSuccess={() => {
+          loadDashboardData(); // Recarrega os KPIs do dashboard
+          toast({
+            title: "Entrega Cadastrada!",
+            description: "A nova entrega foi criada e atribuída com sucesso.",
+          });
+          // Fecha o modal após o sucesso
+          setShowDeliveryUpload(false);
+        }}
+      />
     </div>
   );
 };

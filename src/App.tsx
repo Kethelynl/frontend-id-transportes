@@ -8,14 +8,16 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import Login from "@/pages/Login";
 import { Dashboard } from "@/pages/dashboard";
-import NotFound from "./pages/NotFound";
-import React from "react";
+import React, { Suspense } from "react";
 import Users from "./pages/dashboard/Users";
 import Vehicles from "./pages/dashboard/Vehicles";
-import Deliveries from "./pages/dashboard/Deliveries";
-import Tracking from "./pages/dashboard/Tracking";
+// Lazy load the Tracking component to prevent potential module conflicts
+const Tracking = React.lazy(() => import("./pages/dashboard/Tracking"));
+import NotFound from "./pages/NotFound";
 import Reports from "./pages/dashboard/Reports";
 import { Companies } from "./pages/dashboard/Companies";
+import { ReceiptsReport } from "./pages/dashboard/ReceiptsReport";
+
 
 const queryClient = new QueryClient();
 
@@ -79,21 +81,13 @@ const AppRoutes = () => {
         } 
       />
       <Route 
-        path="/dashboard/entregas" 
-        element={
-          <ProtectedRoute>
-            <DashboardLayout>
-              <Deliveries />
-            </DashboardLayout>
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
         path="/dashboard/rastreamento" 
         element={
           <ProtectedRoute>
             <DashboardLayout>
-              <Tracking />
+              <Suspense fallback={<div className="flex items-center justify-center h-full"><div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" /></div>}>
+                <Tracking />
+              </Suspense>
             </DashboardLayout>
           </ProtectedRoute>
         } 
@@ -114,6 +108,16 @@ const AppRoutes = () => {
           <ProtectedRoute>
             <DashboardLayout>
               <Companies />
+            </DashboardLayout>
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/dashboard/receipts-report" 
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <ReceiptsReport />
             </DashboardLayout>
           </ProtectedRoute>
         } 

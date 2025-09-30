@@ -9,11 +9,11 @@ import { Loader2, Building2, User, Lock } from 'lucide-react';
 import { apiService } from '@/services/api';
 
 interface Company {
+  // CORREÇÃO: A interface foi ajustada para corresponder aos dados retornados por `getAuthCompanies`.
+  // As propriedades `email` e `subscription_plan` não são fornecidas neste endpoint.
   id: string;
   name: string;
   domain: string;
-  email: string;
-  subscription_plan: string;
 }
 
 const Login: React.FC = () => {
@@ -33,7 +33,7 @@ const Login: React.FC = () => {
   const loadCompanies = async () => {
     try {
       setCompaniesLoading(true);
-      const response = await apiService.getCompanies();
+      const response = await apiService.getAuthCompanies(); // CORREÇÃO: Usar a função específica para o fluxo de autenticação
       if (response.success && response.data) {
         setCompanies(response.data);
       } else {
@@ -111,7 +111,6 @@ const Login: React.FC = () => {
                         <div>
                           <h3 className="font-medium text-gray-900">{company.name}</h3>
                           <p className="text-sm text-gray-500">{company.domain}</p>
-                          <p className="text-xs text-gray-400">{company.subscription_plan}</p>
                         </div>
                         <Button size="sm" variant="outline">
                           Selecionar

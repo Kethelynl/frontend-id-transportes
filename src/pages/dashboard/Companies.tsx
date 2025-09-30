@@ -43,11 +43,17 @@ export const Companies = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [companyToDelete, setCompanyToDelete] = useState<Company | null>(null);
   
   const [formData, setFormData] = useState({
     name: '',
+    cnpj: '',
     domain: '',
     email: '',
+    subscription_plan: 'BASIC',
+    max_users: 5,
+    max_drivers: 2,
     primary_color: '#3B82F6',
     secondary_color: '#1E40AF'
   });
@@ -109,8 +115,23 @@ export const Companies = () => {
       const response = await apiService.getCompanies();
       console.log('Response companies:', response);
       
-      if (response.success && response.data) {
-        setCompanies(response.data);
+      if (response.success) {
+        const raw = Array.isArray(response.data) ? response.data : [];
+        const normalized: Company[] = raw.map((c: any) => ({
+          id: String(c.id),
+          name: c.name ?? '',
+          domain: c.domain ?? '',
+          email: c.email ?? '',
+          primary_color: c.primary_color ?? undefined,
+          secondary_color: c.secondary_color ?? undefined,
+          status: c.status ?? (typeof c.is_active === 'boolean' ? (c.is_active ? 'ACTIVE' : 'INACTIVE') : 'ACTIVE'),
+          subscription_plan: c.subscription_plan ?? undefined,
+          max_users: typeof c.max_users === 'number' ? c.max_users : undefined,
+          max_drivers: typeof c.max_drivers === 'number' ? c.max_drivers : undefined,
+          created_at: c.created_at ?? '',
+          updated_at: c.updated_at ?? ''
+        }));
+        setCompanies(normalized);
       } else {
         console.error('Erro ao carregar empresas:', response.error);
         toast({
@@ -133,7 +154,18 @@ export const Companies = () => {
 
   const handleCreateCompany = async () => {
     try {
-      const response = await apiService.createCompany(formData);
+      // Monta o payload esperado pela API (sem campos de UI como cores)
+      const payload = {
+        name: (formData.name || '').trim(),
+        cnpj: (formData.cnpj || '').replace(/\D/g, ''),
+        domain: (formData.domain || '').trim(),
+        email: (formData.email || '').trim(),
+        subscription_plan: formData.subscription_plan || 'BASIC',
+        max_users: Number(formData.max_users) || 5,
+        max_drivers: Number(formData.max_drivers) || 2,
+      };
+
+      const response = await apiService.createCompany(payload);
       if (response.success && response.data) {
         toast({
           title: "Sucesso",
@@ -142,8 +174,12 @@ export const Companies = () => {
         setShowCreateDialog(false);
         setFormData({
           name: '',
+          cnpj: '',
           domain: '',
           email: '',
+          subscription_plan: 'BASIC',
+          max_users: 5,
+          max_drivers: 2,
           primary_color: '#3B82F6',
           secondary_color: '#1E40AF'
         });
@@ -168,7 +204,15 @@ export const Companies = () => {
     if (!editingCompany) return;
     
     try {
-      const response = await apiService.updateCompany(editingCompany.id, formData);
+      // Envia apenas campos aceitos pelo endpoint de update
+      const payload = {
+        name: formData.name ? formData.name.trim() : undefined,
+        domain: formData.domain ? formData.domain.trim() : undefined,
+        email: formData.email ? formData.email.trim() : undefined,
+        // Os demais campos (planos/limites) podem ser adicionados no futuro quando houver UI
+      };
+
+      const response = await apiService.updateCompany(editingCompany.id, payload);
       if (response.success && response.data) {
         toast({
           title: "Sucesso",
@@ -177,8 +221,12 @@ export const Companies = () => {
         setEditingCompany(null);
         setFormData({
           name: '',
+          cnpj: '',
           domain: '',
           email: '',
+          subscription_plan: 'BASIC',
+          max_users: 5,
+          max_drivers: 2,
           primary_color: '#3B82F6',
           secondary_color: '#1E40AF'
         });
@@ -197,6 +245,17 @@ export const Companies = () => {
         variant: "destructive",
       });
     }
+  };
+
+
+  const openDeleteDialog = (company: Company) => {
+    setCompanyToDelete(company);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const closeDeleteDialog = () => {
+    setIsDeleteDialogOpen(false);
+    setCompanyToDelete(null);
   };
 
   const filteredCompanies = companies.filter(company =>
@@ -396,8 +455,12 @@ export const Companies = () => {
                             setEditingCompany(company);
                             setFormData({
                               name: company.name,
+                              cnpj: '',
                               domain: company.domain,
                               email: company.email,
+                              subscription_plan: 'BASIC',
+                              max_users: 5,
+                              max_drivers: 2,
                               primary_color: company.primary_color || '#3B82F6',
                               secondary_color: company.secondary_color || '#1E40AF'
                             });
@@ -408,6 +471,14 @@ export const Companies = () => {
                         <Button variant="ghost" size="icon">
                           <Activity className="h-4 w-4" />
                         </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => openDeleteDialog(company)}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -417,6 +488,24 @@ export const Companies = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Delete Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={closeDeleteDialog}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Confirmar Exclusão</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir a empresa "{companyToDelete?.name}"? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button variant="outline" onClick={closeDeleteDialog}>
+              Cancelar
+            </Button>
+            
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Dialog */}
       <Dialog open={!!editingCompany} onOpenChange={() => setEditingCompany(null)}>
@@ -468,4 +557,4 @@ export const Companies = () => {
   );
 };
 
-export default Companies; 
+export default Companies;

@@ -28,6 +28,8 @@ export interface User {
   company_id?: string;
   company_name?: string;
   company_domain?: string;
+  driver_id?: string | number;
+  user_id?: string;
   last_login?: string | null;
   created_at?: string;
   updated_at?: string;
@@ -72,4 +74,29 @@ export interface CompaniesResponse {
   domain: string;
   email: string;
   subscription_plan: string;
+}
+
+export interface DriverLocation {
+  driver_id: string;
+  driver_name: string;
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  speed: number;
+  heading: number;
+  last_update: string;
+  status: string;
+  activity_status: 'idle' | 'active';
+  current_delivery_id?: string;
+  current_delivery_client?: string;
+}
+
+export interface DriverHistoryPoint {
+  timestamp: string;
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  speed: number;
+  heading: number;
+  delivery_id?: string;
 }

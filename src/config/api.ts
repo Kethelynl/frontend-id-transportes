@@ -1,7 +1,7 @@
 // Configuração centralizada da API - Multi-Tenant System
 export const API_CONFIG = {
   // ✅ Portas corretas dos serviços
-  AUTH_SERVICE: 'http://localhost:3000',    // ✅ auth-service (onde está o endpoint /api/auth/companies)
+  AUTH_SERVICE: 'http://localhost:3001',    // ✅ auth-service (onde está o endpoint /api/auth/companies)
   AUTH_USERS: 'http://localhost:3001',      // ✅ auth-users-service (não tem endpoint de companies)
   DRIVERS: 'http://localhost:3002',         // ✅ drivers-vehicles-service
   DELIVERIES: 'http://localhost:3003',      // ✅ deliveries-routes-service

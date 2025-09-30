@@ -6,13 +6,13 @@ import { Input } from '@/components/ui/input';
 
 interface Receipt {
   id: string;
-  deliveryId: string;
-  client: string;
-  nfNumber: string;
-  date: string;
+  delivery_id: string;
+  driver_id: string;
+  filename: string;
   status: string;
-  imageUrl: string;
-  ocrStatus: string;
+  ocr_data?: Record<string, unknown>;
+  validated: boolean;
+  created_at: string;
 }
 
 const Deliveries: React.FC = () => {
@@ -44,9 +44,9 @@ const Deliveries: React.FC = () => {
     fetchReceipts();
   };
 
-  const handleProcessOCR = async (id: string) => {
+  const handleProcessOCR = async (id: string, file?: File) => {
     setProcessingId(id);
-    const response = await apiService.processReceiptOCR(id);
+    const response = await apiService.processReceiptOCR(id, );
     if (response.success) {
       fetchReceipts();
     } else {
@@ -56,8 +56,9 @@ const Deliveries: React.FC = () => {
   };
 
   const filteredReceipts = receipts.filter(r =>
-    r.nfNumber.includes(search) ||
-    r.client.toLowerCase().includes(search.toLowerCase())
+    (r.filename && r.filename.toLowerCase().includes(search.toLowerCase())) ||
+    (r.delivery_id && r.delivery_id.includes(search)) ||
+    (r.driver_id && r.driver_id.includes(search))
   );
 
   const PAGE_SIZE = 10;
@@ -81,7 +82,7 @@ const Deliveries: React.FC = () => {
           <h1 className="text-2xl font-bold">Canhotos de Entregas</h1>
           <form onSubmit={handleSearch} className="flex flex-col gap-2 w-full max-w-md md:flex-row md:gap-2">
             <Input
-              placeholder="Buscar por NF ou Cliente"
+              placeholder="Buscar por arquivo, entrega ou motorista"
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="w-full min-h-[44px] text-base"
@@ -106,26 +107,47 @@ const Deliveries: React.FC = () => {
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr className="border-b">
-                      <th className="px-4 py-2 text-left">NF</th>
-                      <th className="px-4 py-2 text-left">Cliente</th>
+                      <th className="px-4 py-2 text-left">ID</th>
+                      <th className="px-4 py-2 text-left">Arquivo</th>
+                      <th className="px-4 py-2 text-left">Entrega</th>
+                      <th className="px-4 py-2 text-left">Motorista</th>
                       <th className="px-4 py-2 text-left">Data</th>
                       <th className="px-4 py-2 text-left">Status</th>
-                      <th className="px-4 py-2 text-left">Comprovante</th>
-                      <th className="px-4 py-2 text-left">OCR</th>
+                      <th className="px-4 py-2 text-left">Validado</th>
                       <th className="px-4 py-2 text-left">Ações</th>
                     </tr>
                   </thead>
                   <tbody>
                     {paginatedReceipts.map((r) => (
                       <tr key={r.id} className="border-b hover:bg-muted/30">
-                        <td className="px-4 py-2">{r.nfNumber}</td>
-                        <td className="px-4 py-2">{r.client}</td>
-                        <td className="px-4 py-2">{new Date(r.date).toLocaleDateString('pt-BR')}</td>
+                        <td className="px-4 py-2">{r.id}</td>
+                        <td className="px-4 py-2">{r.filename || 'N/A'}</td>
+                        <td className="px-4 py-2">{r.delivery_id || 'N/A'}</td>
+                        <td className="px-4 py-2">{r.driver_id || 'N/A'}</td>
+                        <td className="px-4 py-2">{new Date(r.created_at).toLocaleDateString('pt-BR')}</td>
                         <td className="px-4 py-2">{r.status}</td>
-                        <td className="px-4 py-2"><a href={r.imageUrl} target="_blank" rel="noopener noreferrer">Ver</a></td>
-                        <td className="px-4 py-2">{r.ocrStatus}</td>
+                        <td className="px-4 py-2">{r.validated ? 'Sim' : 'Não'}</td>
                         <td className="px-4 py-2">
-                          <Button size="sm" variant="outline" onClick={() => handleProcessOCR(r.id)} disabled={processingId === r.id} className="min-h-[36px] text-sm">{processingId === r.id ? 'Processando...' : 'Processar OCR'}</Button>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                handleProcessOCR(r.id, file);
+                              }
+                            }}
+                            className="mb-2"
+                          />
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleProcessOCR(r.id)}
+                            disabled={processingId === r.id}
+                            className="min-h-[36px] text-sm"
+                          >
+                            {processingId === r.id ? 'Processando...' : 'Processar OCR (sem arquivo)'}
+                          </Button>
                         </td>
                       </tr>
                     ))}
@@ -144,4 +166,4 @@ const Deliveries: React.FC = () => {
   );
 };
 
-export default Deliveries; 
+export default Deliveries;

@@ -1,64 +1,38 @@
-import { LoginCredentials, ApiResponse, User, Company } from '@/types/auth';
+import { LoginCredentials, ApiResponse, User, Company, DriverLocation, DriverHistoryPoint } from '@/types/auth';
 import { getBaseUrl } from '@/config/api';
 
 class ApiService {
   private isTokenValid(): boolean {
-    // Verifica primeiro o token final
     let token = localStorage.getItem('id_transporte_token');
-    
-    // Se não tem token final, verifica o token temporário
     if (!token) {
       token = localStorage.getItem('temp_token');
     }
-    
     if (!token) {
-      console.log('Token não encontrado no localStorage');
       return false;
     }
-    
     try {
-      // Verificar se o token tem o formato correto (3 partes separadas por ponto)
       const parts = token.split('.');
       if (parts.length !== 3) {
-        console.log('Token com formato inválido');
         return false;
       }
-      
-      // Decodificar o token JWT (base64url para base64)
       const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
       const payload = JSON.parse(atob(base64));
       const currentTime = Math.floor(Date.now() / 1000);
-      
-      console.log('Token expira em:', new Date(payload.exp * 1000));
-      console.log('Tempo atual:', new Date(currentTime * 1000));
-      console.log('Token válido:', payload.exp > currentTime);
-      
       return payload.exp > currentTime;
     } catch (error) {
-      console.log('Erro ao validar token:', error);
       return false;
     }
   }
 
+  
+
   private getAuthHeader(): Record<string, string> {
-    console.log('=== DEBUG getAuthHeader ===');
-    
-    // Primeiro tenta o token final (com company_id)
     let token = localStorage.getItem('id_transporte_token');
-    console.log('Token final:', token ? 'Presente' : 'Ausente');
-    
-    // Se não tem token final, tenta o token temporário
     if (!token) {
       token = localStorage.getItem('temp_token');
-      console.log('Token temporário:', token ? 'Presente' : 'Ausente');
     }
-    
     if (token) {
-      console.log('Token encontrado:', token.substring(0, 20) + '...');
-      console.log('Token válido:', this.isTokenValid());
-      
       if (!this.isTokenValid()) {
-        console.log('Token expirado ou inválido - removendo do localStorage');
         localStorage.removeItem('id_transporte_token');
         localStorage.removeItem('id_transporte_user');
         localStorage.removeItem('id_transporte_company');
@@ -66,10 +40,8 @@ class ApiService {
         localStorage.removeItem('temp_user');
         return {};
       }
-      console.log('Token válido - enviando no header Authorization');
       return { Authorization: `Bearer ${token}` };
     }
-    console.log('Nenhum token encontrado no localStorage');
     return {};
   }
 
@@ -80,50 +52,36 @@ class ApiService {
     try {
       const baseUrl = getBaseUrl(endpoint);
       const fullUrl = `${baseUrl}${endpoint}`;
-      console.log(`Fazendo requisição para: ${fullUrl}`);
       
       const headers = {
         'Content-Type': 'application/json',
         ...this.getAuthHeader(),
         ...options.headers,
       };
-      
-      console.log('Headers da requisição:', headers);
+
+      if (options.body instanceof FormData) {
+        delete headers['Content-Type'];
+      }
       
       const response = await fetch(fullUrl, {
         headers,
         ...options,
       });
-
-      console.log(`Status da resposta: ${response.status} ${response.statusText}`);
-      console.log('Headers da resposta:', Object.fromEntries(response.headers.entries()));
-
+      
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
-        console.error('Erro da API:', errorData);
-        
-        // Tratamento específico para erro de configuração do backend
         if (errorData?.error?.includes('secretOrPrivateKey')) {
           throw new Error('Erro de configuração do servidor. Entre em contato com o administrador.');
         }
-        
         throw new Error(errorData?.error || `HTTP ${response.status}`);
       }
 
       const data = await response.json();
-      console.log('Dados da resposta:', data);
-      
-      // Verificar se a resposta já tem a estrutura esperada
       if (data && typeof data === 'object' && 'success' in data) {
-        console.log('Resposta já tem estrutura esperada, retornando diretamente');
         return data as ApiResponse<T>;
       }
-      
       return { success: true, data };
     } catch (error) {
-      console.error('API Error:', error);
-      
-      // Melhorar mensagem de erro para o usuário
       let errorMessage = 'Erro de conexão';
       if (error instanceof Error) {
         if (error.message.includes('secretOrPrivateKey')) {
@@ -134,11 +92,60 @@ class ApiService {
           errorMessage = error.message;
         }
       }
-      
       return {
         success: false,
         error: errorMessage,
       };
+    }
+  }
+
+  // Dentro de src/services/api.ts, na classe ApiService
+
+  public async attachReceipt(deliveryId: string, driverId: string, receiptFile: File): Promise<any> {
+    const formData = new FormData();
+    // O serviço de canhotos espera o arquivo no campo 'file' e os IDs
+    formData.append('file', receiptFile);
+    formData.append('delivery_id', deliveryId);
+    formData.append('driver_id', driverId);
+
+    // CORREÇÃO: A rota correta para upload de canhotos é no serviço de canhotos (porta 3004)
+    // e não no serviço de entregas.
+    return this.request(`/api/receipts/upload`, {
+      method: 'POST',
+      body: formData,
+      // Não definimos 'Content-Type', o navegador fará isso automaticamente para multipart/form-data
+    });
+  }
+
+  /**
+   * Busca um arquivo de uma URL protegida e retorna uma URL de objeto (blob) para exibição.
+   * @param url A URL do recurso protegido.
+   * @returns Uma string contendo a URL do blob ou null em caso de erro.
+   */
+  public async getSecureFile(url: string): Promise<string | null> {
+    try {
+      const headers = this.getAuthHeader();
+      if (Object.keys(headers).length === 0) {
+        throw new Error("Usuário não autenticado.");
+      }
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: headers,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error || `Falha ao buscar o arquivo: ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+
+    } catch (error) {
+      console.error("Erro em getSecureFile:", error);
+      // Propaga o erro para ser tratado no componente
+      throw error;
     }
   }
 
@@ -156,38 +163,62 @@ class ApiService {
       company_domain?: string;
     };
   }>> {
-    console.log('=== DEBUG API LOGIN ===');
-    console.log('Credenciais enviadas:', credentials);
-    
-    const response = await this.request('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify(credentials),
-    });
-    
-    console.log('Resposta do login da API:', response);
-    return response as ApiResponse<{
-      token: string;
-      user: {
-        id: string;
-        username: string;
-        email: string;
-        full_name: string;
-        user_type: string;
-        company_id?: string;
-        company_name?: string;
-        company_domain?: string;
-      };
-    }>;
+    // CORREÇÃO: Removida a declaração duplicada
+    const response = await this.request<{ data: { token: string; user: any } }>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(credentials),
+  });
+
+  // CORREÇÃO: A API de login retorna um objeto `data` aninhado.
+  // Precisamos desempacotar a resposta para que o frontend receba { success: true, data: { token, user } }
+  // diretamente, em vez de { success: true, data: { data: { token, user } } }.
+  if (response.success && response.data && response.data.data) {
+    return { ...response, data: response.data.data };
   }
 
-  async getCompanies(): Promise<ApiResponse<Array<{
+  return response as any; // Retorna a resposta original se a estrutura for inesperada
+}
+
+  // Função para o fluxo de login (serviço de autenticação)
+  async getAuthCompanies(): Promise<ApiResponse<Array<{ id: string; name: string; domain: string }>>> {
+    const response = await this.request<{ data: Array<{ id: string; name: string; domain: string }> }>('/api/auth/companies');
+
+    // CORREÇÃO: A API pode retornar um objeto `data` aninhado.
+    // Desempacota a resposta para que o frontend receba { success: true, data: [...] }
+    if (response.success && response.data && (response.data as any).data) {
+      return { ...response, data: (response.data as any).data };
+    }
+
+    return response as any;
+  }
+
+async getReceiptsReport() {
+    // CORREÇÃO: Remove a propriedade 'baseUrl' inválida e passa apenas o endpoint e o método.
+    return this.request('/api/deliveries/with-receipts', {
+        method: 'GET', 
+    });
+}
+
+  // Função para o gerenciamento de empresas (serviço de empresas)
+  async getManagementCompanies(): Promise<ApiResponse<Array<{
     id: string;
     name: string;
     domain: string;
     email: string;
     subscription_plan: string;
   }>>> {
-    return this.request('/api/auth/companies');
+    return this.request('/api/companies'); // Endpoint correto para gerenciamento
+  }
+
+  /**
+   * @deprecated A função getCompanies() é ambígua. Use getAuthCompanies() para o fluxo de login ou getManagementCompanies() para gerenciamento.
+   */
+  async getCompanies(): Promise<ApiResponse<any[]>> {
+    console.warn(
+      "A função getCompanies() é ambígua e será removida. Use getAuthCompanies() para login ou getManagementCompanies() para gerenciamento."
+    );
+    // Por segurança, redireciona para a função de gerenciamento, que é o uso mais comum nos dashboards.
+    return this.getManagementCompanies();
   }
 
   async selectCompany(companyId: string): Promise<ApiResponse<{
@@ -213,6 +244,8 @@ class ApiService {
     });
   }
 
+  
+
   async logout(): Promise<ApiResponse<{ message: string }>> {
     return this.request('/api/auth/logout', {
       method: 'POST',
@@ -234,29 +267,10 @@ class ApiService {
     processed: boolean;
     status: string;
   }>> {
-    const token = localStorage.getItem('id_transporte_token');
-    
-    try {
-      const baseUrl = getBaseUrl('/api/receipts/upload');
-      const response = await fetch(`${baseUrl}/api/receipts/upload`, {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.error || `HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      return { success: true, data };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro no upload',
-      };
-    }
+    return this.request('/api/receipts/upload', {
+      method: 'POST',
+      body: formData,
+    });
   }
 
   async processReceiptOCR(receiptId: string): Promise<ApiResponse<{
@@ -270,6 +284,35 @@ class ApiService {
     raw_text: string;
   }>> {
     return this.request(`/api/receipts/${receiptId}/process-ocr`, { method: 'POST' });
+  }
+  
+  async smartProcessDocument(file: File): Promise<ApiResponse<{
+    extractedData: {
+      nfNumber?: string;
+      clientName?: string;
+      clientCnpj?: string;
+      deliveryAddress?: string;
+      merchandiseValue?: string;
+      volume?: string;
+      weight?: string;
+      issueDate?: string;
+      dueDate?: string;
+      observations?: string;
+      nfeKey?: string;
+    };
+    rawText: string;
+    entities: Array<Record<string, unknown>>;
+    confidence: number;
+    uploadUrl?: string;
+    rawFields?: Record<string, string[]>;
+  }>> {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    return this.request('/api/receipts/process-documentai', {
+      method: 'POST',
+      body: formData,
+    });
   }
 
   async validateReceipt(receiptId: string, validationData: {
@@ -349,13 +392,6 @@ class ApiService {
     return this.request(`/api/tracking/drivers/${driverId}/history${queryParams}`);
   }
 
-  async updateDriverStatus(driverId: string, status: 'active' | 'inactive' | 'busy' | 'available'): Promise<ApiResponse<{ message: string }>> {
-    return this.request(`/api/tracking/drivers/${driverId}/status`, {
-      method: 'PUT',
-      body: JSON.stringify({ status }),
-    });
-  }
-
   // Occurrences endpoints (Gestão de Ocorrências)
   async createOccurrence(deliveryId: string, occurrenceData: {
     type: 'reentrega' | 'recusa' | 'avaria';
@@ -387,29 +423,10 @@ class ApiService {
       formData.append('longitude', occurrenceData.longitude.toString());
     }
 
-    const token = localStorage.getItem('id_transporte_token');
-    
-    try {
-      const baseUrl = getBaseUrl('/api/deliveries');
-      const response = await fetch(`${baseUrl}/api/deliveries/${deliveryId}/occurrence`, {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.error || `HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      return { success: true, data };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao criar ocorrência',
-      };
-    }
+    return this.request(`/api/deliveries/${deliveryId}/occurrence`, {
+      method: 'POST',
+      body: formData,
+    });
   }
 
   async getOccurrences(filters?: {
@@ -594,6 +611,7 @@ class ApiService {
 
 
   // Deliveries endpoints (Gestão de Entregas)
+  
   async getDeliveries(filters?: {
     status?: string;
     driver_id?: string;
@@ -605,7 +623,9 @@ class ApiService {
     client_address: string;
     merchandise_value: number;
     status: string;
-    driver_name: string;
+    driver_name?: string;
+    driver_id?: string;
+    has_receipt?: boolean;
     created_at: string;
   }>>> {
     const queryParams = filters ? `?${new URLSearchParams(filters as Record<string, string>).toString()}` : '';
@@ -782,13 +802,54 @@ class ApiService {
     return this.request(`/api/drivers${queryParams}`);
   }
 
-  async createDriver(driverData: {
-    name: string;
-    cpf: string;
-    cnh: string;
-    phone: string;
+  async registerDriverAccount(payload: {
+    username: string;
+    password: string;
     email: string;
-    vehicle_id?: string;
+    full_name: string;
+    cpf: string;
+    phone?: string;
+    cnh?: string;
+    company_id: string | number;
+
+  }): Promise<ApiResponse<{
+    user: User;
+    driver: Record<string, unknown>;
+  }>> {
+    // CORREÇÃO: A rota POST /api/drivers já lida com a criação do usuário associado.
+    // Não é necessário chamar /api/users (createUser) separadamente.
+    try {
+      // A rota POST /api/drivers aceita todos os campos para criar o motorista e o usuário.
+      // CORREÇÃO: O backend espera o campo 'name', mas o formulário envia 'full_name'.
+      // Mapeamos 'full_name' para 'name' para garantir compatibilidade.
+      const response = await this.createDriver({
+        ...payload,
+        name: payload.full_name,
+      });
+      if (!response.success) {
+        throw new Error(response.error || 'Falha ao registrar a conta do motorista.');
+      }
+      return {
+        success: true,
+        data: response.data as any, // A resposta de createDriver já é suficiente
+      };
+    } catch (error: any) {
+      console.error("Erro em registerDriverAccount:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async createDriver(driverData: {
+    name?: string; // name é opcional pois pode vir como full_name
+    cpf: string;
+    cnh?: string;
+    phone?: string;
+    username?: string;
+    password?: string;
+    user_id?: string; // Adicionado para vincular ao usuário
+    email?: string;
+    full_name?: string; // Adicionado para compatibilidade com registerDriverAccount
+    company_id?: string | number;
   }): Promise<ApiResponse<{
     id: string;
     name: string;
@@ -925,7 +986,78 @@ class ApiService {
     });
   }
 
+  async deleteUser(userId: string): Promise<ApiResponse<{ message: string }>> {
+    return this.request(`/api/users/${userId}`, {
+      method: 'DELETE'
+    });
+  }
 
+  async sendDriverLocation(locationData: {
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+    speed?: number;
+    heading?: number;
+    delivery_id?: string | null;
+    driver_id?: string;
+  }): Promise<ApiResponse<{ success: boolean }>> {
+    return this.request('/api/tracking/location', {
+      method: 'POST',
+      body: JSON.stringify(locationData),
+    });
+  }
+
+  async getDriverCurrentLocations(): Promise<ApiResponse<DriverLocation[]>> {
+    return this.request('/api/tracking/drivers/current-locations');
+  }
+
+  async getDriverHistory(driverId: string, options?: { start_date?: string; end_date?: string }): Promise<ApiResponse<DriverHistoryPoint[]>> {
+    const queryParams = options ? `?${new URLSearchParams(options as Record<string, string>).toString()}` : '';
+    return this.request(`/api/tracking/drivers/${driverId}/history${queryParams}`);
+  }
+
+  async updateDriverStatus(driverId: string, status: 'online' | 'offline' | 'idle'): Promise<ApiResponse<{ success: boolean }>> {
+    return this.request(`/api/tracking/drivers/${driverId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  // Método para criar entrega a partir de dados SEFAZ
+  async createDelivery(payload: { file?: File, [key: string]: any }): Promise<ApiResponse<{
+    id: string;
+    nf_number: string;
+    client_name: string;
+    client_address: string;
+    merchandise_value: number;
+    status: string;
+    message: string;
+  }>> {
+    const formData = new FormData();
+
+    // Itera sobre o payload para adicionar os campos ao FormData
+    for (const key in payload) {
+      if (Object.prototype.hasOwnProperty.call(payload, key)) {
+        const value = payload[key];
+        if (value === undefined || value === null) {
+          continue;
+        }
+
+        if (value instanceof Blob) {
+          formData.append(key, value);
+        } else if (typeof value === 'object') {
+          formData.append(key, JSON.stringify(value));
+        } else {
+          formData.append(key, String(value));
+        }
+      }
+    }
+
+    return this.request('/api/deliveries/create-from-sefaz', {
+      method: 'POST',
+      body: formData, // Envia o FormData em vez de JSON
+    });
+  }
 }
 
 export const apiService = new ApiService();

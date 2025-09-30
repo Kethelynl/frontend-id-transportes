@@ -20,27 +20,42 @@ import {
 } from 'lucide-react';
 import { apiService } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
 import { User } from '@/types/auth';
 
 export const Users = () => {
   const { toast } = useToast();
+  const { user: authUser } = useAuth(); // 🔒 Obter usuário autenticado para verificações de segurança
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   
+  // Estado para empresas
+  const [companies, setCompanies] = useState<Array<{
+    id: string;
+    name: string;
+    domain: string;
+    email: string;
+    subscription_plan: string;
+  }>>([]);
+  const [companiesLoading, setCompaniesLoading] = useState(false);
+  
   const [formData, setFormData] = useState({
     name: '',
     username: '',
     email: '',
+    password: '', // Campo de senha
     role: '',
     cpf: '',
+    company_id: '', // Novo campo para empresa
     status: 'ATIVO'
   });
 
   useEffect(() => {
     loadUsers();
+    loadCompanies();
   }, []);
 
   const loadUsers = async () => {
@@ -52,7 +67,7 @@ export const Users = () => {
       } else {
         toast({
           title: "Erro",
-          description: "Não foi possível carregar os usuários",
+          description: response.error || "Erro ao carregar usuários",
           variant: "destructive",
         });
       }
@@ -67,9 +82,93 @@ export const Users = () => {
     }
   };
 
+  const loadCompanies = async () => {
+    try {
+      console.log('[Users.tsx] 1. Iniciando carregamento de empresas para o formulário...');
+      setCompaniesLoading(true);
+
+      // 🔴 PROBLEMA: A chamada `apiService.getCompanies()` aponta para `/api/auth/companies`, que é para o fluxo de login.
+      // ✅ SOLUÇÃO: Usar uma função que busca no serviço de gerenciamento de empresas (`/api/companies` na porta 3007).
+      // Vamos usar `getManagementCompanies()` que já existe no seu `api.ts` para essa finalidade.
+      const response = await apiService.getManagementCompanies();
+      console.log('[Users.tsx] 2. Resposta da API de empresas recebida:', response);
+
+      if (response.success && response.data) {
+        console.log(`[Users.tsx] 3. Sucesso! ${response.data.length} empresas carregadas.`);
+        setCompanies(response.data);
+      } else {
+        console.error('[Users.tsx] 3. Falha ao carregar empresas. Erro:', response.error);
+        toast({
+          title: "Erro",
+          description: response.error || "Erro ao carregar empresas",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('[Users.tsx] 4. Ocorreu uma exceção ao carregar empresas:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao carregar empresas",
+        variant: "destructive",
+      });
+    } finally {
+      setCompaniesLoading(false);
+    }
+  };
+
+  // CORREÇÃO: Vamos criar uma função `getManagementCompanies` em `api.ts` para evitar ambiguidade.
+  // Esta é a alteração que você precisa fazer no seu arquivo `src/services/api.ts`
+  /*
+  // Em src/services/api.ts
+
+  // ... (outros métodos)
+
+  // Função para o fluxo de login (serviço de autenticação)
+  async getAuthCompanies(): Promise<ApiResponse<any[]>> {
+    return this.request('/api/auth/companies');
+  }
+
+  // Função para o gerenciamento de empresas (serviço de empresas)
+  async getManagementCompanies(): Promise<ApiResponse<any[]>> {
+    return this.request('/api/companies');
+  }
+
+  // Função antiga, agora obsoleta para evitar confusão.
+  async getCompanies(): Promise<ApiResponse<any[]>> {
+    console.warn("A função getCompanies() é ambígua. Use getAuthCompanies() para login ou getManagementCompanies() para gerenciamento.");
+    // Por segurança, redireciona para a função de gerenciamento.
+    return this.getManagementCompanies();
+  }
+  */
+
   const handleCreateUser = async () => {
     try {
-      const response = await apiService.createUser(formData);
+      // Validação básica da senha
+      if (!formData.password || formData.password.length < 6) {
+        toast({
+          title: "Erro de Validação",
+          description: "A senha deve ter pelo menos 6 caracteres.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Mapear os campos do formulário para o formato esperado pelo backend
+      const normalizedStatus = (formData.status || 'ATIVO').toUpperCase() === 'INATIVO' ? 'INATIVO' : 'ATIVO';
+
+      const userData = {
+        username: formData.username.trim(),
+        password: formData.password,
+        email: formData.email,
+        full_name: formData.name, // Mapear 'name' para 'full_name'
+        user_type: formData.role, // Mapear 'role' para 'user_type'
+        company_id: formData.company_id || undefined,
+        cpf: formData.cpf ? formData.cpf.trim() : undefined,
+        status: normalizedStatus,
+        is_active: normalizedStatus === 'ATIVO'
+      };
+      
+      const response = await apiService.createUser(userData);
       if (response.success && response.data) {
         toast({
           title: "Sucesso",
@@ -80,8 +179,10 @@ export const Users = () => {
           name: '',
           username: '',
           email: '',
+          password: '',
           role: '',
           cpf: '',
+          company_id: '',
           status: 'ATIVO'
         });
         loadUsers();
@@ -105,7 +206,17 @@ export const Users = () => {
     if (!editingUser) return;
     
     try {
-      const response = await apiService.updateUser(editingUser.id, formData);
+      const normalizedStatus = (formData.status || 'ATIVO').toUpperCase() === 'INATIVO' ? 'INATIVO' : 'ATIVO';
+      const updatePayload = {
+        email: formData.email,
+        full_name: formData.name,
+        user_type: formData.role,
+        cpf: formData.cpf ? formData.cpf.trim() : undefined,
+        status: normalizedStatus,
+        is_active: normalizedStatus === 'ATIVO'
+      };
+
+      const response = await apiService.updateUser(editingUser.id, updatePayload);
       if (response.success && response.data) {
         toast({
           title: "Sucesso",
@@ -116,8 +227,10 @@ export const Users = () => {
           name: '',
           username: '',
           email: '',
+          password: '',
           role: '',
           cpf: '',
+          company_id: '',
           status: 'ATIVO'
         });
         loadUsers();
@@ -137,11 +250,78 @@ export const Users = () => {
     }
   };
 
+  const handleDeleteUser = async (userId: string, userName: string) => {
+    // Confirmação antes de excluir
+    const confirmed = window.confirm(
+      `Tem certeza que deseja excluir permanentemente o usuário "${userName}"?\n\nEsta ação não pode ser desfeita e o usuário será completamente removido do banco de dados.`
+    );
+    
+    if (!confirmed) return;
+    
+    try {
+      const response = await apiService.deleteUser(userId);
+      if (response.success) {
+        toast({
+          title: "Sucesso",
+          description: "Usuário excluído permanentemente do sistema!",
+        });
+        loadUsers(); // Recarregar a lista de usuários
+      } else {
+        toast({
+          title: "Erro",
+          description: response.error || "Erro ao excluir usuário",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Erro ao excluir usuário",
+        variant: "destructive",
+      });
+    }
+  };
+
   const filteredUsers = users.filter(user =>
     (user.name || user.full_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (user.username || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (user.email || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // 🔒 Função para obter tipos de usuário permitidos baseado no perfil do usuário logado
+  const getAllowedUserTypes = () => {
+    const userRole = authUser?.role || authUser?.user_type;
+    
+    switch (userRole) {
+      case 'MASTER':
+        // Master pode criar qualquer tipo de usuário
+        return [
+          { value: 'ADMIN', label: 'Administrador' },
+          { value: 'SUPERVISOR', label: 'Supervisor' },
+          { value: 'OPERATOR', label: 'Operador' },
+          { value: 'DRIVER', label: 'Motorista' },
+          { value: 'CLIENT', label: 'Cliente' }
+        ];
+      case 'ADMIN':
+      case 'ADMINISTRADOR':
+        // Admin pode criar: supervisor, operador, motorista e cliente
+        return [
+          { value: 'SUPERVISOR', label: 'Supervisor' },
+          { value: 'OPERATOR', label: 'Operador' },
+          { value: 'DRIVER', label: 'Motorista' },
+          { value: 'CLIENT', label: 'Cliente' }
+        ];
+      case 'SUPERVISOR':
+        // Supervisor pode criar apenas: operador e motorista
+        return [
+          { value: 'OPERATOR', label: 'Operador' },
+          { value: 'DRIVER', label: 'Motorista' }
+        ];
+      default:
+        // Outros tipos de usuário não podem criar usuários
+        return [];
+    }
+  };
 
   const getRoleBadge = (role: string) => {
     const roleColors: Record<string, string> = {
@@ -164,7 +344,16 @@ export const Users = () => {
     );
   };
 
-  const getStatusBadge = (isActive: number | boolean) => {
+  const getStatusBadge = (status: number | boolean | string | undefined) => {
+    const isActive =
+      typeof status === 'string'
+        ? (() => {
+            const s = status.trim().toLowerCase();
+            if (s === 'ativo' || s === 'active' || s === '1') return true;
+            if (s === 'inativo' || s === 'inactive' || s === '0') return false;
+            return Boolean(status);
+          })()
+        : Boolean(status);
     return isActive ? (
       <Badge className="bg-green-100 text-green-800">Ativo</Badge>
     ) : (
@@ -183,13 +372,15 @@ export const Users = () => {
           </p>
         </div>
         
-        <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-          <DialogTrigger asChild>
-            <Button className="flex items-center gap-2">
-              <Plus className="h-4 w-4" />
-              Novo Usuário
-            </Button>
-          </DialogTrigger>
+        {/* 🔒 Só mostra o botão se o usuário tiver permissão para criar usuários */}
+        {getAllowedUserTypes().length > 0 && (
+          <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+            <DialogTrigger asChild>
+              <Button className="flex items-center gap-2">
+                <Plus className="h-4 w-4" />
+                Novo Usuário
+              </Button>
+            </DialogTrigger>
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
               <DialogTitle>Criar Novo Usuário</DialogTitle>
@@ -224,17 +415,30 @@ export const Users = () => {
                 />
               </div>
               <div className="grid gap-2">
+                <Label htmlFor="password">Senha *</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                  placeholder="Digite a senha (mínimo 6 caracteres)"
+                  minLength={6}
+                  required
+                />
+              </div>
+              <div className="grid gap-2">
                 <Label htmlFor="role">Perfil</Label>
                 <Select value={formData.role} onValueChange={(value) => setFormData(prev => ({ ...prev, role: value }))}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione o perfil" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ADMIN">Administrador</SelectItem>
-                    <SelectItem value="SUPERVISOR">Supervisor</SelectItem>
-                    <SelectItem value="OPERATOR">Operador</SelectItem>
-                    <SelectItem value="DRIVER">Motorista</SelectItem>
-                    <SelectItem value="CLIENT">Cliente</SelectItem>
+                    {/* 🔒 Mostra apenas os tipos de usuário permitidos para o usuário logado */}
+                    {getAllowedUserTypes().map((userType) => (
+                      <SelectItem key={userType.value} value={userType.value}>
+                        {userType.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -247,6 +451,25 @@ export const Users = () => {
                   placeholder="Digite o CPF"
                 />
               </div>
+              <div className="grid gap-2">
+                <Label htmlFor="company">Empresa *</Label>
+                <Select 
+                  value={formData.company_id} 
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, company_id: value }))}
+                  disabled={companiesLoading}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={companiesLoading ? "Carregando empresas..." : "Selecione a empresa"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {companies.map((company) => (
+                      <SelectItem key={company.id} value={company.id}>
+                        {company.name} ({company.domain})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
@@ -258,6 +481,7 @@ export const Users = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        )}
       </div>
 
       {/* Search and Filters */}
@@ -320,26 +544,46 @@ export const Users = () => {
                     <TableCell>{getStatusBadge(user.status || user.is_active)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setEditingUser(user);
-                            setFormData({
-                              name: user.name || user.full_name,
-                              username: user.username,
-                              email: user.email,
-                              role: user.role || user.user_type,
-                              cpf: user.cpf || '',
-                              status: user.status || (user.is_active ? 'ATIVO' : 'INATIVO')
-                            });
-                          }}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {/* 🔒 PROTEÇÃO: Ocultar botões de edição/exclusão para usuários MASTER quando o usuário logado não é MASTER */}
+                        {!((user.role === 'MASTER' || user.user_type === 'MASTER') && authUser?.user_type !== 'MASTER') && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                setEditingUser(user);
+                                setFormData({
+                                  name: user.name || user.full_name,
+                                  username: user.username,
+                                  email: user.email,
+                                  password: '',
+                                  role: user.role || user.user_type,
+                                  cpf: user.cpf || '',
+                                  company_id: (user as any).company_id ? String((user as any).company_id) : '',
+                                  status: typeof user.status === 'string' ? user.status : (user.is_active ? 'ATIVO' : 'INATIVO')
+                                });
+                              }}
+                              title={(user.role === 'MASTER' || user.user_type === 'MASTER') ? 'Editar usuário MASTER' : 'Editar usuário'}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              onClick={() => handleDeleteUser(user.id, user.name || user.full_name || user.username)}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              title={(user.role === 'MASTER' || user.user_type === 'MASTER') ? 'Excluir usuário MASTER' : 'Excluir usuário'}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
+                        {/* Mostrar indicador visual quando as ações estão bloqueadas */}
+                        {(user.role === 'MASTER' || user.user_type === 'MASTER') && authUser?.user_type !== 'MASTER' && (
+                          <span className="text-xs text-gray-500 italic px-2 py-1 bg-gray-100 rounded">
+                            Protegido
+                          </span>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -389,11 +633,12 @@ export const Users = () => {
                   <SelectValue placeholder="Selecione o perfil" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ADMIN">Administrador</SelectItem>
-                  <SelectItem value="SUPERVISOR">Supervisor</SelectItem>
-                  <SelectItem value="OPERATOR">Operador</SelectItem>
-                  <SelectItem value="DRIVER">Motorista</SelectItem>
-                  <SelectItem value="CLIENT">Cliente</SelectItem>
+                  {/* 🔒 Mostra apenas os tipos de usuário permitidos para o usuário logado */}
+                  {getAllowedUserTypes().map((userType) => (
+                    <SelectItem key={userType.value} value={userType.value}>
+                      {userType.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -420,4 +665,4 @@ export const Users = () => {
   );
 };
 
-export default Users; 
+export default Users;
