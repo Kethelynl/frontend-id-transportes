@@ -446,6 +446,8 @@ export const CompanySelector: React.FC = () => {
 
 ```javascript
 // services/api.ts (implementação atual)
+import { API_BASE_URL } from '@/config/api'; // Importa a nova URL base
+
 class ApiService {
   private getAuthHeader(): Record<string, string> {
     // Primeiro tenta o token final (com company_id)
@@ -464,8 +466,7 @@ class ApiService {
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
     try {
-      const baseUrl = getBaseUrl(endpoint);
-      const fullUrl = `${baseUrl}${endpoint}`;
+      const fullUrl = `${API_BASE_URL}${endpoint}`; // Usa a URL base única
       
       const headers = {
         'Content-Type': 'application/json',
