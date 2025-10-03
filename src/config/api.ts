@@ -1,8 +1,8 @@
 // Configuração centralizada da API - Multi-Tenant System
 export const API_CONFIG = {
   // ✅ Portas corretas dos serviços
-  AUTH_SERVICE: 'http://localhost:3001',    // ✅ auth-service (onde está o endpoint /api/auth/companies)
-  AUTH_USERS: 'http://localhost:3001',      // ✅ auth-users-service (não tem endpoint de companies)
+  AUTH_SERVICE: 'https://auth-service-production-76c3.up.railway.app/',    // ✅ auth-service (onde está o endpoint /api/auth/companies)
+  AUTH_USERS: 'https://backend-id-trasportes-production.up.railway.app/',      // ✅ auth-users-service (não tem endpoint de companies)
   DRIVERS: 'http://localhost:3002',         // ✅ drivers-vehicles-service
   DELIVERIES: 'http://localhost:3003',      // ✅ deliveries-routes-service
   RECEIPTS: 'http://localhost:3004',        // ✅ receipts-ocr-service
